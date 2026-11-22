@@ -11,7 +11,7 @@ CREATE VOLUME IF NOT EXISTS tpe_fraud.landing.checkpoints; -- Auto Loader’s me
 CREATE SCHEMA IF NOT EXISTS tpe_fraud.bronze;
 CREATE SCHEMA IF NOT EXISTS tpe_fraud.silver;
 CREATE SCHEMA IF NOT EXISTS tpe_fraud.gold;
-CREATE SCHEMA IF NOT EXISTS tpe_fraud.quarantine;
+CREATE SCHEMA IF NOT EXISTS tpe_fraud.quarantaine;
 
 -- Vérification
 SHOW SCHEMAS IN tpe_fraud;

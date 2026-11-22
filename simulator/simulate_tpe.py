@@ -189,7 +189,7 @@ def build_events(cards, profiles, terminals, mcc_of, start=date(2026, 1, 5), day
             elif e["kind"] == "invalid_missing_field":
                 del msg[e["detail"]]
             elif e["kind"] == "invalid_future_date":
-                msg["timestamp"] = _iso(e["t"] + timedelta(days=30))
+                msg["timestamp"] = _iso(e["t"] + timedelta(days=1825))   # ~5 ans : toujours dans le futur, meme en mode accelere
         e["msg"] = msg
         final.append(e)
 
@@ -345,7 +345,7 @@ def main():
 
     dry = os.path.join(a.sim_dir, f"messages{suffix}.jsonl") if a.dry_run else None
     emitted = run(events, a.mode, a.speed, a.host, a.port, dry)
-    counts["emitted"] = emitted
+    counts["emitted_dry_run" if a.dry_run else "emitted"] = emitted
     with open(os.path.join(a.sim_dir, f"counts{suffix}.json"), "w", encoding="utf-8") as f:
         json.dump(counts, f, indent=2, ensure_ascii=False)
 
