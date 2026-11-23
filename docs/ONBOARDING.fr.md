@@ -315,7 +315,7 @@ python edge/upload.py
 - La première commande **liste** les fichiers à envoyer, sans rien envoyer. Vérifiez qu'elle affiche environ 14 fichiers.
 - La seconde envoie vraiment. À la fin, elle affiche les totaux : **8232 lignes** dans `transactions` et **124 lignes** dans `rejets`.
 
-Gardez le fichier `data/sim/upload_report.json` : il contient ces totaux. Vérifiez aussi dans **Catalog** que les fichiers sont dans les volumes.
+Gardez le fichier `data/upload_report.json` : il contient ces totaux. Vérifiez aussi dans **Catalog** que les fichiers sont dans les volumes.
 
 ---
 
