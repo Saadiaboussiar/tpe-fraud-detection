@@ -129,7 +129,6 @@ Vous allez importer plusieurs fichiers du projet. Voici où se trouve le bouton 
 3. Dans le menu, cliquez sur **Import**.
 4. Choisissez le fichier sur votre PC, puis validez.
 
-![Menu des trois points avec l'option Import](images/databricks-import-menu.png)
 
 Le fichier apparaît ensuite dans le dossier comme un **notebook** : un document fait de petites « cellules » de code, que l'on lance une par une.
 
