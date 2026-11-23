@@ -23,3 +23,10 @@ q = (spark.readStream.format("cloudFiles")
 
 q.awaitTermination()
 display(spark.table(table))
+
+
+# COMMAND ----------
+
+dbutils.fs.rm("/Volumes/tpe_fraud/landing/iot/test", True)
+dbutils.fs.rm("/Volumes/tpe_fraud/landing/bank/test", True)
+dbutils.fs.rm("/Volumes/tpe_fraud/landing/checkpoints/test_autoloader", True)

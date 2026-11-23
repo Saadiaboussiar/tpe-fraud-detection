@@ -134,7 +134,7 @@ def main():
     p.add_argument("--edge-out", default="data/edge_out")
     p.add_argument("--bank-dir", default="data/bank")
     p.add_argument("--state", default="data/upload_state.json")
-    p.add_argument("--report", default="data/sim/upload_report.json")
+    p.add_argument("--report", default="data/upload_databricks_report.json")
     p.add_argument("--retries", type=int, default=3)
     p.add_argument("--watch", type=float, default=0.0, help="repete toutes les N secondes (0 = un seul passage)")
     p.add_argument("--dry-run", action="store_true", help="liste les fichiers sans rien envoyer")
