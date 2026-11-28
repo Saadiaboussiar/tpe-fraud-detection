@@ -10,7 +10,7 @@ This repository contains a card-fraud detection platform for a network of simula
 > | Task | Content | Status |
 > |---|---|---|
 > | Task 1 | Steps 0 to 6: generator, simulator, Mosquitto, Edge, upload, Auto Loader into Bronze and Quarantine | **Done** |
-> | Task 2 | Steps 7 to 9: bank Bronze tables, Silver (`is_fraud` label), Gold (features) | To do |
+> | Task 2 | Steps 7 to 9: bank Bronze tables, Silver (`is_fraud` label), Gold (features) | **Done** (see sections 11 and 12, and `docs/TASK2.fr.md`) |
 > | Task 3 | Steps 10 to 13: SQL KPIs, baseline and model, visible result, end-to-end tests | To do |
 
 ## 1. MVP 1 architecture
@@ -25,6 +25,11 @@ flowchart LR
     UP --> VOL[Databricks Volumes<br/>landing/iot, landing/bank]
     VOL -->|Auto Loader| BR[Bronze<br/>tpe_fraud.bronze.transactions]
     VOL -->|Auto Loader| Q[Quarantine<br/>tpe_fraud.quarantaine.rejets]
+    VOL -->|batch notebook 07| BB[Bronze bank<br/>clients, cartes, commercants, fraudes_confirmees]
+    BR --> SIL[Silver<br/>tpe_fraud.silver.transactions]
+    BB --> SIL
+    SIL --> GOLD[Gold<br/>features_tx, kpi_heure_commercant]
+    SIL -.->|Silver rejects| Q
 ```
 
 - **Local:** bank generator, simulator, Mosquitto (Docker), Edge, upload script.
@@ -38,6 +43,7 @@ MVP 1 is a subset of the validated architecture. Postponed to later versions: te
 ```
 config/                  mosquitto.conf (queue limits, see section 9)
 docs/proofs/             Task 1 proofs (JSON counts)
+docs/TASK2.fr.md         Task 2 guide: how each notebook works, expected results, handover to Task 3
 edge/
   gateway.py             Edge: validation, deduplication, burst rule, Parquet output
   upload.py              sends finished files to the Databricks Volumes
@@ -45,7 +51,7 @@ generator/
   generate_bank.py       clients, cards, merchants, card profiles, terminals
 pipeline/
   sql/                   Databricks schema creation
-  notebooks/             Databricks notebooks (06a, 06b: Auto Loader)
+  notebooks/             Databricks notebooks (06a, 06b: Auto Loader; 07: bank Bronze; 08: Silver; 09: Gold)
 simulator/
   simulate_tpe.py        TPE simulator (MQTT publisher), injects frauds and invalid messages
   count_subscriber.py    test subscriber: messages received = messages emitted
@@ -94,6 +100,8 @@ CREATE VOLUME  IF NOT EXISTS tpe_fraud.landing.bank;
 CREATE VOLUME  IF NOT EXISTS tpe_fraud.landing.checkpoints;
 CREATE SCHEMA  IF NOT EXISTS tpe_fraud.bronze;
 CREATE SCHEMA  IF NOT EXISTS tpe_fraud.quarantaine;
+CREATE SCHEMA  IF NOT EXISTS tpe_fraud.silver;
+CREATE SCHEMA  IF NOT EXISTS tpe_fraud.gold;
 ```
 
 Installation check: `pytest` must show **60 passed**.
@@ -170,7 +178,11 @@ All data is synthetic. Identifiers (`card_id`, `merchant_id`, `terminal_id`) are
 | Table | Content |
 |---|---|
 | `tpe_fraud.bronze.transactions` | Valid transactions from the Edge, with the Edge columns, `_source_file`, `_ingested_at`. Append only |
-| `tpe_fraud.quarantaine.rejets` | Edge rejects (`niveau_rejet = 'Edge'`). Silver will add its own (`niveau_rejet = 'Silver'`) |
+| `tpe_fraud.quarantaine.rejets` | Edge rejects (`niveau_rejet = 'Edge'`) and Silver rejects (`niveau_rejet = 'Silver'`, added by notebook 08) |
+| `tpe_fraud.bronze.clients`, `cartes`, `commercants`, `fraudes_confirmees` | Bank CSVs as raw text, with `_source_file` and `_ingested_at` (notebook 07) |
+| `tpe_fraud.silver.transactions` | Deduplicated, typed transactions enriched with card and merchant data, with the `is_fraud` label (notebook 08) |
+| `tpe_fraud.gold.features_tx` | One row per transaction, features computed from the past only (notebook 09) |
+| `tpe_fraud.gold.kpi_heure_commercant` | Aggregates per hour and merchant, for the KPIs (notebook 09) |
 
 ## 7. Task 1 results and proofs
 
@@ -192,7 +204,7 @@ The proof files are in `docs/proofs/`.
 pytest
 ```
 
-60 tests: generator (9), simulator (14), Edge (24), upload script with a fake Databricks client (13). The Databricks notebooks are not covered by `pytest`: they are checked by the counts in section 7.
+60 tests: generator (9), simulator (14), Edge (24), upload script with a fake Databricks client (13). The Databricks notebooks are not covered by `pytest`: they are checked by the counts in sections 7 and 12 (notebooks 07 to 09 stop on a failed assertion).
 
 ## 9. Known limits and lessons learned
 
@@ -203,10 +215,45 @@ pytest
 - **Databricks environment:** serverless compute, usage quotas, Auto Loader run by hand in "read new files, then stop" mode.
 - **Local machine:** Mosquitto, simulator and Edge run together; available memory must be enough.
 - **Rerunning the simulator** rewrites `fraudes_confirmees.csv`: only do it after clearing Bronze, otherwise the confirmed frauds no longer match the transactions already ingested.
+- **Silver rejects nothing on this data:** the synthetic bank and terminal data are consistent (0 rejects), so the Silver rules (unknown card, unknown merchant, invalid timestamp, non-positive amount) are correct by design but not exercised by the real data. A small test with an unknown card would show them working.
+- **687 transactions have no label** (`label_statut = 'non_etiquete'`): they are too recent for a confirmation to be expected. This is intended, and they must be excluded from training and test.
+- **The label depends on the cutoff date** (default: latest `date_confirmation`). Changing it changes which transactions are labelled.
+- **Bank Bronze is a full snapshot** (overwrite), not a `MERGE` on `fraud_id`. Enough for one initial load; to revisit if confirmations arrive in several batches.
 
 ## 10. Working method
 
 - One branch per step (`task1/setup`, `task1/generator`, `task1/simulator`, …), merged into `main`, preferably by a pull request reviewed by the next person.
-- Sequential handover: Task 2 starts once the Task 1 counts are validated (section 7).
+- Sequential handover: Task 2 starts once the Task 1 counts are validated (section 7). Task 3 starts once the Task 2 counts are validated (section 12).
 - **No secrets in Git:** `.env` is ignored; only `.env.example` (fake values) is committed. If a token is published by mistake, revoke it immediately in Databricks.
 - The repository is the source of truth: any notebook change made in Databricks must be exported and committed.
+
+## 11. Execution guide (Task 2)
+
+Task 2 runs **entirely in Databricks** (serverless), by hand, after Task 1. Nothing to start on the PC. Full explanations, expected output of each notebook and the handover to Task 3 are in `docs/TASK2.fr.md`.
+
+Prerequisites: Task 1 finished (Bronze 8232 rows, Quarantine 124 rows, the four bank CSVs in `/Volumes/tpe_fraud/landing/bank`) and the schemas `silver` and `gold` created (`pipeline/sql/00_setup.sql`).
+
+Import each notebook from `pipeline/notebooks/` (**Workspace**, **Import**), attach serverless compute, click **Run all**, in this order:
+
+| # | Notebook | Output | Expected check |
+|---|---|---|---|
+| 7 | `07_bronze_banque.py` | `bronze.clients`, `cartes`, `commercants`, `fraudes_confirmees` | 150, 200, 20, 165 rows |
+| 8 | `08_silver_transactions.py` | `silver.transactions`, Silver rejects in `quarantaine.rejets` | Bronze 8232 = Silver 8232 + 0 rejects + 0 duplicates |
+| 9 | `09_gold.py` | `gold.features_tx`, `gold.kpi_heure_commercant` | same row count as Silver, hand recomputation of the features |
+
+Notes:
+
+- Notebook `08` has two widgets, `date_coupure` (empty = latest `date_confirmation`) and `maturite_jours` (21). Keep the defaults.
+- Notebooks 07, 08 and 09 overwrite their tables: they can be rerun safely, in order. Never touch the checkpoints of `06a` and `06b`.
+- Rerunning the simulator changes `fraudes_confirmees.csv`: follow "Starting over from scratch" (section 5) first, then rerun 07, 08 and 09.
+
+## 12. Task 2 results and proofs
+
+| Step | Check | Result |
+|---|---|---|
+| Bank Bronze | row counts | clients 150, cartes 200, commercants 20, fraudes_confirmees 165 |
+| Silver | Bronze = Silver + rejects + duplicates removed | 8232 = 8232 + 0 + 0 |
+| Silver | frauds labelled 1 vs confirmed frauds | 165 = 165, no confirmed fraud without a transaction |
+| Silver | label distribution | `fraude` 165, `legitime` 7380, `non_etiquete` 687 |
+| Silver | Edge rule against the label (labelled rows) | `suspect` and fraud 33; not `suspect` and fraud 132; not `suspect` and legitimate 7380 |
+| Gold | asserted by notebook 09 at each run | `features_tx` rows = Silver rows; aggregate totals = Silver totals; three features recomputed by hand on one card |
